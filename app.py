@@ -13,3 +13,6 @@ def process_data(data):
 
 if __name__ == "__main__":
     print("Backend running...")
+    def test_function():
+    """Test için basit fonksiyon"""
+    return "G4 testing"
