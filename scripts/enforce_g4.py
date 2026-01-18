@@ -15,12 +15,11 @@ VAGUE_PATTERNS = [
 def check_tool_artifacts(review):
     errors = []
     evidence = review.get('verification_evidence', {})
-    methods = evidence.get('how_verified', [])
     tool_outputs = evidence.get('tool_outputs', {})
     
-    for method in methods:
-        if 'pylint' in method.lower() and 'pylint' not in tool_outputs:
-            errors.append("Claimed pylint but no artifact")
+    for tool_name, artifact_path in tool_outputs.items():
+        if not os.path.exists(artifact_path):
+            errors.append(f"Tool output '{artifact_path}' claimed but file not found")
     
     return errors
 
