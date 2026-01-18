@@ -14,8 +14,8 @@ def main():
     
     os.makedirs('artifacts', exist_ok=True)
     
-    with open('artifacts/pylint_report.txt', 'w') as f:
-        f.write("Pylint check: OK\n")
+   # with open('artifacts/pylint_report.txt', 'w') as f:
+       # f.write("Pylint check: OK\n")
     
     review = {
         "review_summary": {
