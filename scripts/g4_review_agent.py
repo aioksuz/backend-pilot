@@ -6,10 +6,12 @@ import os
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--pr-number', required=True)
+    parser.add_argument('--pr-title', required=True)
+    parser.add_argument('--pr-body', default="")
     parser.add_argument('--base-sha', required=True)
     parser.add_argument('--head-sha', required=True)
-    parser.add_argument('--risk-tier', required=True)
     parser.add_argument('--output', required=True)
+    # risk-tier removed - not needed with LLM
     args = parser.parse_args()
     
     os.makedirs('artifacts', exist_ok=True)
