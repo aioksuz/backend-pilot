@@ -24,20 +24,28 @@ jobs:
         with:
           python-version: '3.x'
       
+      - name: Install Dependencies
+        run: pip install openai
+      
       - name: Run Review Agent
         env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           python scripts/g4_review_agent.py \
             --pr-number "$PR_NUMBER" \
-            --base-sha "dummy" \
-            --head-sha "dummy" \
-            --risk-tier "MED" \
+            --pr-title "$PR_TITLE" \
+            --pr-body "$PR_BODY" \
+            --base-sha "$BASE_SHA" \
+            --head-sha "$HEAD_SHA" \
             --output review.json
       
       - name: G4 Enforcement Gate
-        run: |
-          python scripts/enforce_g4.py review.json
+        run: python scripts/enforce_g4.py review.json
       
       - name: Upload Review
         if: always()
