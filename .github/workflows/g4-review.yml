@@ -1,146 +1,57 @@
-#!/usr/bin/env python3
-import argparse
-import json
-import os
-import subprocess
-from openai import OpenAI
+name: G4 Code Review
 
-def get_pr_diff(base_sha, head_sha):
-    """Get git diff between commits"""
-    try:
-        diff = subprocess.check_output([
-            'git', 'diff', f'{base_sha}...{head_sha}'
-        ], stderr=subprocess.STDOUT).decode()
-        return diff[:2000]  # Limit to 2000 chars for token safety
-    except:
-        return "Could not fetch diff"
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
 
-def analyze_with_llm(pr_title, pr_body, diff):
-    """Use OpenAI to analyze PR"""
-    
-    client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
-    
-    prompt = f"""You are a code review verifier. Analyze if PR claims match the actual changes.
+permissions:
+  contents: read
+  pull-requests: write
 
-PR Title: {pr_title}
-
-PR Description:
-{pr_body or "No description provided"}
-
-Code Changes (truncated):
-{diff[:1500]}
-
-Task: Verify claims against evidence. Output JSON only.
-
-Required JSON format:
-{{
-  "claims_verified": true/false,
-  "evidence_quality": "good/weak/missing",
-  "specific_issues": ["list any issues"],
-  "verdict": "PASS/FAIL",
-  "reasoning": "brief explanation (1-2 sentences)"
-}}
-"""
+jobs:
+  g4-review:
+    name: G4 Enforcement Gate
+    runs-on: ubuntu-latest
     
-    try:
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[{"role": "user", "content": prompt}],
-            response_format={"type": "json_object"},
-            temperature=0,
-            max_tokens=300
-        )
-        
-        return json.loads(response.choices[0].message.content)
-    except Exception as e:
-        print(f"LLM Error: {e}")
-        return {
-            "claims_verified": False,
-            "evidence_quality": "error",
-            "specific_issues": [f"LLM call failed: {str(e)}"],
-            "verdict": "FAIL",
-            "reasoning": "Could not complete LLM analysis"
-        }
-
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--pr-number', required=True)
-    parser.add_argument('--pr-title', required=True)
-    parser.add_argument('--pr-body', default="")
-    parser.add_argument('--base-sha', required=True)
-    parser.add_argument('--head-sha', required=True)
-    parser.add_argument('--output', required=True)
-    args = parser.parse_args()
-    
-    # Get PR diff
-    diff = get_pr_diff(args.base_sha, args.head_sha)
-    
-    # Analyze with LLM
-    llm_result = analyze_with_llm(args.pr_title, args.pr_body, diff)
-    
-    # Create artifacts directory
-    os.makedirs('artifacts', exist_ok=True)
-    
-    # Save LLM analysis as artifact
-    with open('artifacts/llm_analysis.json', 'w') as f:
-        json.dump(llm_result, f, indent=2)
-    
-    # Build G4-compliant review
-    review = {
-        "review_summary": {
-            "pr_id": f"PR-{args.pr_number}",
-            "files_analyzed": 1,
-            "total_lines_changed": len(diff.split('\n')),
-            "issues_found": len(llm_result.get('specific_issues', [])),
-            "completion_status": "complete"
-        },
-        "verification_evidence": {
-            "how_verified": [
-                "LLM analyzed PR title, description, and code changes",
-                f"Claims verified: {llm_result.get('claims_verified')}",
-                f"Evidence quality: {llm_result.get('evidence_quality')}"
-            ],
-            "tool_outputs": {
-                "llm": "artifacts/llm_analysis.json"
-            },
-            "checks_performed": {
-                "logic_correctness": {
-                    "verified": llm_result.get('claims_verified', False),
-                    "method": "LLM claim vs evidence matching",
-                    "details": llm_result.get('reasoning', 'No details')
-                },
-                "test_coverage": {
-                    "verified": True,
-                    "method": "Not yet implemented",
-                    "details": "Placeholder for future implementation"
-                }
-            },
-            "sufficiency_reasoning": llm_result.get('reasoning', 'LLM provided no reasoning')
-        },
-        "issues": [
-            {
-                "file": "PR Description",
-                "line": 0,
-                "severity": "major",
-                "category": "verification",
-                "description": issue,
-                "evidence": "LLM analysis",
-                "suggestion": "Provide evidence"
-            }
-            for issue in llm_result.get('specific_issues', [])
-        ],
-        "positive_observations": [
-            "LLM analysis completed"
-        ]
-    }
-    
-    # Write review
-    with open(args.output, 'w') as f:
-        json.dump(review, f, indent=2)
-    
-    print(f"✅ LLM Review: {args.output}")
-    print(f"   Verdict: {llm_result.get('verdict')}")
-    print(f"   Reasoning: {llm_result.get('reasoning')}")
-
-if __name__ == '__main__':
-    main()
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.x'
+      
+      - name: Install Dependencies
+        run: pip install openai
+      
+      - name: Run Review Agent
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          python scripts/g4_review_agent.py \
+            --pr-number "$PR_NUMBER" \
+            --pr-title "$PR_TITLE" \
+            --pr-body "$PR_BODY" \
+            --base-sha "$BASE_SHA" \
+            --head-sha "$HEAD_SHA" \
+            --output review.json
+      
+      - name: G4 Enforcement Gate
+        run: python scripts/enforce_g4.py review.json
+      
+      - name: Upload Review
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: review-${{ github.event.pull_request.number }}
+          path: |
+            review.json
+            artifacts/
