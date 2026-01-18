@@ -15,12 +15,11 @@ VAGUE_PATTERNS = [
 def check_tool_artifacts(review):
     errors = []
     evidence = review.get('verification_evidence', {})
-    methods = evidence.get('how_verified', [])
     tool_outputs = evidence.get('tool_outputs', {})
     
-    for method in methods:
-        if 'pylint' in method.lower() and 'pylint' not in tool_outputs:
-            errors.append("Claimed pylint but no artifact")
+    for tool_name, artifact_path in tool_outputs.items():
+        if not os.path.exists(artifact_path):
+            errors.append(f"Tool output '{artifact_path}' claimed but file not found")
     
     return errors
 
@@ -46,33 +45,4 @@ def enforce_g4_verification(review):
     if 'logic_correctness' not in checks or not checks.get('logic_correctness', {}).get('verified'):
         errors.append("Logic check missing")
     
-    reasoning = evidence.get('sufficiency_reasoning', '')
-    if len(reasoning) < 20:
-        errors.append("Insufficient reasoning")
-    
-    artifact_errors = check_tool_artifacts(review)
-    errors.extend(artifact_errors)
-    
-    return len(errors) == 0, errors
-
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument('review_file')
-    args = parser.parse_args()
-    
-    with open(args.review_file) as f:
-        review = json.load(f)
-    
-    passed, errors = enforce_g4_verification(review)
-    
-    if passed:
-        print("✅ G4 PASS")
-        sys.exit(0)
-    else:
-        print("❌ G4 FAIL:")
-        for e in errors:
-            print(f"  - {e}")
-        sys.exit(1)
-
-if __name__ == '__main__':
-    main()
+    reasoning = evidence.get('suff
